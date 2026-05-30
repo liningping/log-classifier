@@ -261,6 +261,20 @@ def find_transformer_layers(encoder):
     return None
 
 
+def infer_keep_layers_from_state_dict(state_dict):
+    layer_prefix = "encoder.encoder.layer."
+    layer_indices = set()
+    for key in state_dict.keys():
+        if key.startswith(layer_prefix):
+            remainder = key[len(layer_prefix):]
+            index_str = remainder.split(".", 1)[0]
+            if index_str.isdigit():
+                layer_indices.add(int(index_str))
+    if not layer_indices:
+        return None
+    return max(layer_indices) + 1
+
+
 def truncate_student_layers(student, keep_layers):
     if keep_layers is None:
         return

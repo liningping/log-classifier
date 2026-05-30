@@ -1,11 +1,11 @@
+.venv/
+.pytest_cache/
 output/
 /output
 /logs
 /checkpoints
 /models
 /results
-/tests
-/docs
 /examples
 /tutorials
 /notebooks
@@ -31,4 +31,4 @@ pytorch_model.bin
 # Misc
 .DS_Store
 .ipynb_checkpoints/
-outputs
+outputs/

@@ -1,111 +1,160 @@
 # log-classifier
 
-日志分类多分类任务训练框架，支持 HuggingFace `Trainer` 和 PyTorch Lightning 两种训练方式。
+面向移动云智能运维平台日志分类的类脑鲁棒蒸馏项目。仓库交付内容聚焦三件事：源码、技术报告、测试报告；运行链路覆盖数据准备、教师训练、学生蒸馏、推理和验收测试。
 
-## 📁 项目结构
+## 交付目标
 
-```
+| 指标 | 验收要求 | 当前核心结果 |
+| --- | ---: | ---: |
+| Clean Accuracy | >= 90% | 90.4% |
+| 同等功耗吞吐提升 | 比现有算法 >= 20% | 以 `baseline_throughput_samples_per_sec` 配置复测 |
+| 高噪声准确率提升 | 比现有算法 >= 10% | 以 baseline 噪声评估复测 |
+
+当前核心指标汇总见 `core_metrics_summary.json`，正式验收时应在目标硬件或同等功耗环境下重新运行评估脚本，并填入 baseline 吞吐。
+
+## 仓库结构
+
+```text
 log-classifier/
-├── src/
-│   ├── log_classifier/
-│   │   ├── config/          # 数据、模型、训练配置 (DataConfig / ModelConfig / TrainConfig)
-│   │   ├── data/            # 数据加载、预处理、Lightning DataModule
-│   │   │   ├── preprocess.py        # 纯数据逻辑，与框架无关
-│   │   │   ├── hf_dataset.py        # HuggingFace Dataset 适配层
-│   │   │   └── lightning_datamodule.py
-│   │   ├── models/          # 模型 & tokenizer 构建
-│   │   ├── pipelines/        # 训练流水线 (HF Trainer / Lightning Trainer)
-│   │   ├── training/         # WeightedTrainer / 评估指标
-│   │   └── utils/            # 随机种子设置
-│   ├── train_bert.py         # HuggingFace Trainer 训练入口
-│   └── train_bert_lightning.py  # PyTorch Lightning 训练入口
-├── baselines/                 # Baseline 对比实验
-│   ├── run_baseline.py       # 单模型评估脚本
-│   └── run_all_baselines.sh  # 一键运行所有 baseline
-├── data/
-│   └── random_samples.jsonl   # 5000 条样本，5分类 (label3)
-└── baseline_results/          # baseline 运行结果
+├── configs/teacher/                         # 训练、蒸馏、评估配置
+├── data/                                    # 样本数据与固定划分
+├── src/log_classifier/
+│   ├── data/                                # 数据加载、文本构造、划分
+│   ├── inference/                           # checkpoint 推理 CLI
+│   ├── teacher/                             # 类脑教师-学生蒸馏训练与评估
+│   ├── training/                            # 通用指标
+│   └── utils/                               # 随机种子等工具
+├── baselines/                               # 现有算法对比脚本与结果
+├── tests/                                   # 单元测试
+├── TECHNICAL_REPORT.md                      # 技术报告
+└── TEST_REPORT.md                           # 测试报告与复测命令
 ```
 
-## 🚀 快速开始
+## 环境安装
 
-### 安装依赖
+推荐使用 Python 3.12。
 
-```bash
-pip install -e .
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[train,dev]"
 ```
 
-或使用 pip 安装核心依赖：
+如果使用 `uv`：
 
-```bash
-pip install transformers>=5.5.0 torch>=2.11.0 pytorch-lightning>=2.0.0 \
-    scikit-learn>=1.8.0 datasets>=4.8.4 accelerate>=1.13.0
+```powershell
+uv sync --extra train --extra dev
 ```
 
-### 运行训练
+## 1. 数据准备
 
-```bash
-# HuggingFace Trainer 方式
-python src/train_bert.py
+原始样本位于 `data/random_samples.jsonl`，固定划分位于 `data/random_samples_splits.json`。默认任务使用 `label3` 作为五分类标签：
 
-# PyTorch Lightning 方式
-python src/train_bert_lightning.py
+- `Java Spring相关`
+- `代码补全`
+- `动态规划`
+- `排序算法`
+- `搜索算法`
+
+训练脚本默认直接读取固定划分文件：
+
+```text
+data/random_samples_splits.json
 ```
 
-### 运行 Baseline 对比
+如需重新构造数据，应保持每条样本至少包含：
 
-```bash
-# 单模型
-python baselines/run_baseline.py --model bert-base-uncased
-
-# 所有 baseline
-bash baselines/run_all_baselines.sh
+```json
+{"id": "sample-id", "text": "language: python user: ... assistant: ...", "label_text": "搜索算法"}
 ```
 
-## ⚙️ 配置说明
+## 2. 教师模型训练
 
-| 配置类 | 关键参数 | 默认值 |
-|--------|---------|--------|
-| `DataConfig` | `data_path` | `./data/random_samples.jsonl` |
-| | `label_field` | `label3` |
-| | `text_mode` | `user_assistant` |
-| | `test_size` / `dev_size` | `0.1` / `0.1` |
-| `ModelConfig` | `model_name` | `bert-base-uncased` |
-| | `max_length` | `256` |
-| `TrainConfig` | `train_batch_size` | `16` |
-| | `learning_rate` | `2e-5` |
-| | `num_train_epochs` | `5` |
-| | `use_class_weights` | `True` |
+教师模型使用 `microsoft/unixcoder-base`，提供高质量语义表征和软标签监督。
 
-### text_mode 选项
+```powershell
+python -m log_classifier.teacher.train_stage1_ce `
+  --config configs/teacher/ce_unixcoder_seed42.yaml
+```
 
-- `user_only` — 仅使用用户消息
-- `assistant_only` — 仅使用助手回复
-- `user_assistant` — 拼接 `user: ... assistant: ...`
-- `with_meta` — 包含 language / dataset 元信息
+输出目录：
 
-## 📊 Baseline 模型
+```text
+outputs/teacher/ce_unixcoder_seed42/best/
+```
 
-| 模型 | HuggingFace ID | 备注 |
-|------|---------------|------|
-| BERT | `bert-base-uncased` | |
-| RoBERTa | `roberta-base` | |
-| DeBERTa-v3 | `microsoft/deberta-v3-base` | |
-| ERNIE-2.0 | `nghuyong/ernie-2.0-base-en` | |
-| MacBERT | `hfl/chinese-macbert-base` | |
-| XLNet | `xlnet-base-cased` | |
-| ALBERT | `albert-base-v2` | |
-| ELECTRA | `google/electra-base-discriminator` | |
-| CodeBERT | `microsoft/codebert-base` | |
+关键产物包括 `pytorch_model.bin`、tokenizer 文件、`label_mapping.json`、`eval_results.json` 和 `config_snapshot.json`。
 
+## 3. 学生模型蒸馏训练
 
-1. 固定 UniXcoder teacher。
-2. 导出 train/dev clean teacher logits。
-3. 初始化 6-layer student。
-4. 训练 Clean KD。
-5. 若 clean ≥ 90%，进入 HPRD。
-6. HPRD 中使用 UNK-token fixed-ratio noise。
-7. 使用 clean ≥ 90% 作为硬约束保存 robust_avg_0.1_0.5 最优模型。
-8. 对 best checkpoint 做 p=0.1~0.9 完整评估。
-9. 测 end-to-end throughput 和 model-only throughput。
-10. 若 throughput < 391.52，做 max_length / FP16 / ONNX 优化。
+学生模型采用 10 层 UniXcoder，通过 CE、KD、特征对齐、隐层对齐和 R-Drop 一致性学习教师模型的分类经验，作为最终推理模型。
+
+```powershell
+python -m log_classifier.teacher.train_distill_student `
+  --config configs/teacher/distill_unixcoder_10layer_robust_seed42.yaml
+```
+
+输出目录：
+
+```text
+outputs/teacher/distill_unixcoder_10layer_robust_seed42/best/
+```
+
+## 4. 推理
+
+单条文本推理：
+
+```powershell
+python -m log_classifier.inference.predict `
+  --checkpoint-dir outputs/teacher/distill_unixcoder_10layer_robust_seed42/best `
+  --model-name microsoft/unixcoder-base `
+  --student-keep-layers 10 `
+  --text "language: python user: 用 DFS 判断图中是否有环 assistant: 可以使用递归搜索和 visited 状态"
+```
+
+JSONL 批量推理：
+
+```powershell
+python -m log_classifier.inference.predict `
+  --checkpoint-dir outputs/teacher/distill_unixcoder_10layer_robust_seed42/best `
+  --model-name microsoft/unixcoder-base `
+  --student-keep-layers 10 `
+  --input-jsonl data/random_samples.jsonl `
+  --output-jsonl outputs/predictions.jsonl
+```
+
+## 5. 测试与验收
+
+单元测试：
+
+```powershell
+pytest
+```
+
+质量、鲁棒性和吞吐验收：
+
+```powershell
+python -m log_classifier.teacher.evaluate_distilled `
+  --config configs/teacher/eval_distilled_kd_10layer.yaml
+```
+
+评估报告输出：
+
+```text
+outputs/teacher/distill_unixcoder_10layer_robust_seed42/eval_quality_report.json
+```
+
+要验证“同等功耗下吞吐提升 20%”，请在 `configs/teacher/eval_distilled_kd_10layer.yaml` 中填入现有算法在同硬件、同 batch、同功耗约束下测得的：
+
+```yaml
+baseline_throughput_samples_per_sec: 330.94
+throughput_target_ratio: 1.20
+```
+
+要验证“高噪声准确率提升 10%”，请用同一测试集和同一 `noise_probs` 对现有算法运行噪声评估，再与本模型 `robust_average_accuracy` 做绝对提升对比。
+
+## 报告文件
+
+- `TECHNICAL_REPORT.md`：技术方案、类脑蒸馏机制、模型结构、实验结论。
+- `TEST_REPORT.md`：测试范围、指标口径、复测步骤、验收记录。
+- `core_metrics_summary.json`：历史核心指标摘要。

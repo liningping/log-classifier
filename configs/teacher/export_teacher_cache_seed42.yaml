@@ -1,0 +1,11 @@
+model_name: microsoft/unixcoder-base
+teacher_checkpoint_dir: outputs/teacher/ce_unixcoder_seed42/best
+label_mapping_path: outputs/teacher/ce_unixcoder_seed42/label_mapping.json
+data_path: data/random_samples_splits.json
+output_dir: outputs/teacher/cache_seed42
+
+export_splits: [train, dev]
+max_length: 512
+batch_size: 64
+seed: 42
+fp16: true

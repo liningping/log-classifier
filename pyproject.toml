@@ -1,10 +1,14 @@
 [project]
 name = "log-classifier"
 version = "0.1.0"
-description = "Add your description here"
+description = "Brain-inspired robust distillation pipeline for mobile cloud log classification."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+]
+
+[project.optional-dependencies]
+train = [
     "accelerate>=1.13.0",
     "bitsandbytes>=0.49.2",
     "datasets>=4.8.4",
@@ -14,6 +18,7 @@ dependencies = [
     "peft>=0.19.1",
     "protobuf>=7.34.1",
     "pytorch-lightning>=2.0.0",
+    "pyyaml>=6.0.0",
     "scikit-learn>=1.8.0",
     "sentence-transformers>=3.0.0",
     "sentencepiece>=0.2.1",
@@ -22,6 +27,16 @@ dependencies = [
     "transformers>=5.5.0",
     "xgboost>=2.0.0",
 ]
+serve = []
+dev = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+log-classifier-train-teacher = "log_classifier.teacher.train_stage1_ce:main"
+log-classifier-distill-student = "log_classifier.teacher.train_distill_student:main"
+log-classifier-evaluate = "log_classifier.teacher.evaluate_distilled:main"
+log-classifier-predict = "log_classifier.inference.predict:main"
 
 [build-system]
 requires = ["hatchling"]
