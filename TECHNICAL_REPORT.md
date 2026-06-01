@@ -319,17 +319,73 @@ python -m log_classifier.teacher.train_stage1_ce `
 | Clean Accuracy | 原始测试集分类准确率 |
 | Robust Accuracy | 噪声扰动条件下的平均准确率 |
 | Throughput | 每秒可处理样本数 |
+| Macro F1 | 各类别 F1 的算术平均值，用于观察类别均衡表现 |
+| Weighted F1 | 按类别样本数加权后的 F1，用于观察整体分类质量 |
 
-本报告只关注 10 层学生模型与必要的教师模型指标。
+本报告同时展示 baseline 实验结果与 10 层学生模型结果。baseline 排行榜来自 `baselines/baseline_results/summary_leaderboard.json`，传统机器学习 baseline 来自 `baselines/baseline_results/ml/summary_ml.json`，鲁棒性与吞吐对比来自 `core_metrics_summary.json`。
 
 ### 7.2 Teacher 与 10 层 Student 指标
 
 | 模型 | Clean Accuracy | Robust Accuracy | Throughput |
 | --- | ---: | ---: | ---: |
 | UniXcoder Teacher | 0.9222 | - | - |
+| 8 层 UniXcoder Student | 0.9020 | 0.6702 | 715.44 samples/s |
 | 10 层 UniXcoder Student | 0.9040 | 0.7620 | 614.37 samples/s |
 
-### 7.3 指标分析
+### 7.3 Baseline 结果概览
+
+本报告结果展示不再展开 `phase_*` 系列实验，只保留可直接作为 baseline 对照的传统机器学习结果，以及与最终模型相关的鲁棒性、吞吐对比结果。
+
+### 7.4 单模型 Transformer Baseline 结果
+
+根据 `baselines/dl/summary_train.json` 的训练汇总结果，单模型 Transformer baseline 的整体表现如下。该表仅展示基础单模型结果，不包含 `phase_*` 系列中的增强、集成或 stacking 方法。
+
+| 排名 | 方法 | Accuracy | Macro F1 | Weighted F1 | Precision | Recall |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | XLNet-base-cased | 0.8880 | 0.8862 | 0.8862 | 0.8888 | 0.8880 |
+| 2 | CodeBERT-base | 0.8800 | 0.8791 | 0.8791 | 0.8789 | 0.8800 |
+| 3 | BERT-base-uncased | 0.8720 | 0.8703 | 0.8703 | 0.8699 | 0.8720 |
+| 4 | RoBERTa-base | 0.8680 | 0.8658 | 0.8658 | 0.8662 | 0.8680 |
+| 5 | ERNIE-2.0-base-en | 0.8660 | 0.8645 | 0.8645 | 0.8637 | 0.8660 |
+| 6 | ALBERT-base-v2 | 0.8600 | 0.8617 | 0.8617 | 0.8723 | 0.8600 |
+| 7 | Chinese MacBERT-base | 0.8400 | 0.8394 | 0.8394 | 0.8426 | 0.8400 |
+| 8 | Google ELECTRA-base | 0.8400 | 0.8386 | 0.8386 | 0.8461 | 0.8400 |
+
+这组结果更适合作为 BERT 系列 baseline 的主表展示。可以看到，单模型 Transformer baseline 中表现最好的方法是 XLNet-base-cased，accuracy 为 0.8880、macro F1 为 0.8862；CodeBERT-base 和 BERT-base-uncased 分别达到 0.8800 和 0.8720 accuracy。整体上，这组模型已明显优于较弱的传统特征方法下界，但仍普遍低于最终 10 层 UniXcoder Student 的 0.904 clean accuracy。
+
+### 7.5 传统 ML Baseline 结果
+
+传统机器学习 baseline 在训练速度和推理吞吐方面表现突出，结果如下：
+
+| 方法 | Accuracy | Macro F1 | Weighted F1 | Dev Macro F1 | 训练耗时 | Throughput |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| FastText | 0.8960 | 0.8948 | 0.8948 | 0.8871 | 6.09 s | 5027.02 samples/s |
+| TF-IDF + Linear SVM | 0.8920 | 0.8907 | 0.8907 | 0.8785 | 0.67 s | 422047.09 samples/s |
+| TF-IDF + Logistic Regression | 0.8900 | 0.8887 | 0.8887 | 0.8724 | 37.68 s | 183863.93 samples/s |
+| TF-IDF + Naive Bayes | 0.8760 | 0.8743 | 0.8743 | 0.8388 | 0.02 s | 323335.18 samples/s |
+
+传统 ML 方法的主要优势是训练和推理成本低，尤其是 TF-IDF + Linear SVM 在 0.67 秒训练耗时下达到 0.8920 accuracy；FastText 在传统/轻量方法中 accuracy 最高，达到 0.8960。不过这些方法距离 0.90 clean accuracy 目标仍有差距，且语义建模能力弱于预训练 Transformer 和蒸馏模型。
+
+### 7.6 鲁棒性 Baseline 对比
+
+在包含噪声扰动和吞吐统计的 baseline 中，10 层 Student 相比常规 Transformer baseline 具有更好的综合表现：
+
+| 模型 | Clean Accuracy | Robust Accuracy | Throughput |
+| --- | ---: | ---: | ---: |
+| 10 层 UniXcoder Student | 0.9040 | 0.7620 | 614.37 samples/s |
+| 8 层 UniXcoder Student | 0.9020 | 0.6702 | 715.44 samples/s |
+| BERT-base-uncased | 0.8720 | 0.6342 | 330.94 samples/s |
+| RoBERTa-base | 0.8680 | 0.5538 | 326.27 samples/s |
+| ERNIE-2.0-base-en | 0.8660 | 0.6740 | 326.69 samples/s |
+| Chinese MacBERT-base | 0.8400 | 0.6122 | 326.45 samples/s |
+| XLNet-base-cased | 0.8880 | 0.6558 | 230.19 samples/s |
+| ALBERT-base-v2 | 0.8600 | 0.6264 | 267.64 samples/s |
+| ELECTRA-base-discriminator | 0.8400 | 0.6209 | 326.72 samples/s |
+| CodeBERT-base | 0.8800 | 0.4558 | 325.99 samples/s |
+
+该组结果表明，10 层 Student 是对比模型中唯一同时达到 clean accuracy 0.90 以上、robust accuracy 0.76 以上并保持 600 samples/s 以上吞吐的模型。相较 BERT-base-uncased，10 层 Student clean accuracy 提升 0.032，robust accuracy 提升约 0.128，吞吐提升约 85.64%；相较 RoBERTa-base，clean accuracy 提升 0.036，robust accuracy 提升约 0.208，吞吐提升约 88.30%。
+
+### 7.7 指标分析
 
 10 层 Student 的 clean accuracy 为 0.904，满足项目设定的 0.90 精度目标。相较 Teacher，Student 精度有所下降，但换来了更低推理成本和更适合在线部署的模型结构。
 
@@ -337,9 +393,11 @@ Robust accuracy 为 0.762，说明在扰动输入下仍能保持较好的分类�
 
 Throughput 为 614.37 samples/s，说明 10 层 Student 能够支撑交互式前后端系统的在线分类需求。
 
-### 7.4 最终模型选择结论
+从 baseline 对比结果看，10 层 Student 的优势在于以单 checkpoint 形式同时满足精度、鲁棒性与吞吐目标，更符合本项目在线日志分类系统的交付要求。
 
-综合 clean accuracy、robust accuracy 和 throughput，10 层 UniXcoder Student 是本项目最终采用的推理模型。该模型在准确性和部署效率之间取得了较好平衡，适合作为日志分类系统的核心在线模型。
+### 7.8 最终模型选择结论
+
+综合传统 ML baseline、鲁棒性对比和工程部署成本，10 层 UniXcoder Student 是本项目最终采用的推理模型。该模型在单模型 checkpoint、clean accuracy、robust accuracy 和 throughput 之间取得了更适合线上系统的平衡，适合作为日志分类系统的核心在线模型。
 
 ## 8. 推理与系统集成
 
